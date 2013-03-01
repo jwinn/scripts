@@ -53,16 +53,17 @@ if [ $(is_cmd sshfs) ]; then
     fi
   }
 
-  # Remote Umount, unmounts and deletes local folder (experimental, watch you step)
+  # Remote Umount, unmounts and deletes local folder
+  # (experimental, watch your step)
   function rumount () {
     if [[ $1 == "-a" ]]; then
       ls -1 ~/_mounts/g/|while read dir
       do
-        [[ $(mount|grep "mounts/$dir") ]] && umount ~/_mounts/g/$dir
+        [[ $(mount|grep "_mounts/g/$dir") ]] && umount ~/_mounts/g/$dir
         [[ $(ls ~/_mounts/g/$dir) ]] || rm -rf ~/_mounts/g/$dir
       done
     else
-      [[ $(mount|grep "mounts/$1") ]] && umount ~/_mounts/g/$1
+      [[ $(mount|grep "_mounts/g/$1") ]] && umount ~/_mounts/g/$1
       [[ $(ls ~/_mounts/g/$1) ]] || rm -rf ~/_mounts/g/$1
     fi
   }
@@ -94,14 +95,6 @@ if [[ ! $(is_set llm) ]]; then
     fi
   }
 fi
-
-# Load RVM into a shell session *as a function*
-[[ -s "$HOME/.rvm/scripts/rvm" ]] && source "$HOME/.rvm/scripts/rvm"
-
-# rbenv config
-if which rbenv > /dev/null; then eval "$(rbenv init -)"; fi
-
-[ -d "$HOME/.sm" ] && export PATH="${PATH}:${HOME}/.sm/bin:${HOME}/.sm/pkg/active/bin:${HOME}/.sm/pkg/active/sbin"
 
 # Sexy Bash Prompt, inspired by "Extravagant Zsh Prompt"
 # Screenshot: http://i.imgur.com/uAQSa.png
@@ -136,11 +129,33 @@ if [[ -x /usr/local/bin/brew && -d $(brew --prefix)/etc/bash_completion.d ]]; th
 fi
 
 if [[ ${os} == "darwin" && -d /usr/local/Cellar ]]; then
+  path_has_local_bin=$(echo $PATH | grep -o '/usr/local/bin')
+  if [[ -n ${path_has_local_bin} ]]; then
+    # strip out other occurrences and add to first check
+    PATH=$(echo $PATH | sed 's/:*\/usr\/local\/bin//g')
+  fi
   export PATH=/usr/local/bin:$PATH
 fi
 
-if [ -d /usr/local/share/npm/bin ]; then
-  export PATH=/usr/local/share/npm/bin:$PATH
+# Load RVM into a shell session *as a function*
+[[ -s "$HOME/.rvm/scripts/rvm" ]] && source "$HOME/.rvm/scripts/rvm"
+
+# rbenv config
+if which rbenv > /dev/null; then eval "$(rbenv init -)"; fi
+
+[ -d "$HOME/.sm" ] && export PATH="${PATH}:${HOME}/.sm/bin:${HOME}/.sm/pkg/active/bin:${HOME}/.sm/pkg/active/sbin"
+
+has_node=$(command -v node)
+if [[ -n ${has_node} ]]; then
+  node_prefix=$(command -v node | sed 's#^\(.*\)/bin/node$#\1#')
+  path_has_npm=$(echo $PATH | grep -o '/npm/bin')
+  path_has_local_npm=$(echo $PATH | grep -o './node_modules/.bin')
+
+  if [[ -z ${path_has_npm} && -d ${node_prefix}/share/npm/bin ]]; then
+    export PATH=${node_prefix}/share/npm/bin:$PATH
+  fi
+
+  [[ -z ${path_has_local_npm} ]] && export PATH=./node_modules/.bin:$PATH
 fi
 
 PS1="\[${BOLD}${MAGENTA}\]\u \[$WHITE\]at \[$ORANGE\]\h \[$WHITE\]in \[$GREEN\]\w\[$WHITE\]\$([[ -n \$(__git_ps1) ]] && echo \" on \")\[$PURPLE\]\$(parse_git_branch)\[$WHITE\]\n\$ \[$RESET\]"
