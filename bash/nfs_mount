@@ -1,0 +1,138 @@
+#!/bin/bash
+
+CUR_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# ----------------------------------------------------------------------------
+# User configurable
+# ----------------------------------------------------------------------------
+
+# editor to use if $MOUNT_SHARES does not exist
+EDITOR=${EDITOR:-vi}
+
+# Share structure: {mount} {remote_share} {options}
+MOUNT_SHARES=${MOUNT_SHARES:-$CUR_DIR/shares.txt}
+
+# default NFS options, if not specified for the share
+MOUNT_OPTIONS=${MOUNT_OPTIONS:-rw,soft,intr,rsize=8192,wsize=8192,timeo=900,retrans=3,tcp}
+
+# ----------------------------------------------------------------------------
+# END User configurable
+# ----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
+# Functions
+# ----------------------------------------------------------------------------
+
+# Attribute codes:
+# 	00=none 01=bold 04=underscore 05=blink 07=reverse 08=concealed 
+# Text color codes:
+# 	30=black 31=red 32=green 33=yellow 34=blue 35=magenta 36=cyan 37=white
+# Background color codes:
+# 	40=black 41=red 42=green 43=yellow 44=blue 45=magenta 46=cyan 47=white
+startclr="\033["
+endclr="\033[0m"
+
+# error message
+# 	$1 = message
+error_msg() {
+	echo -ne "${startclr}0;31mError:${endclr} "
+	[[ -n "$1" ]] && echo -n $1
+	echo
+	exit 1
+}
+
+# warning message
+# 	$1 = message
+warn_msg() {
+	echo -ne "${startclr}1;33mWarning:${endclr} "
+	[[ -n "$1" ]] && echo -n $1
+	echo
+}
+
+# success message
+# 	$1 = message [Success]
+success_msg() {
+	message=${1:-Success}
+	echo -e "${startclr}0;32m${message}${endclr}"
+}
+
+# ----------------------------------------------------------------------------
+# END Functions
+# ----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
+# Main Program
+# ----------------------------------------------------------------------------
+
+whoami=$(whoami)
+cmd_prefix=""
+[[ $whoami != "root" ]] && cmd_prefix="$(which sudo) "
+
+# create the share file--which will mount no shares
+if [ ! -e $MOUNT_SHARES ]; then
+	echo -ne "Creating ${MOUNT_SHARES}..."
+	if [ ! -w $(dirname $MOUNT_SHARES) ]; then
+		${cmd_prefix}touch $MOUNT_SHARES
+		${cmd_prefix}chmod 0644 $MOUNT_SHARES
+	else
+		touch $MOUNT_SHARES
+		chmod 0644 $MOUNT_SHARES
+	fi
+	success_msg
+fi
+
+[[ ! -r $MOUNT_SHARES ]] && error_msg "Cannot read ${MOUNT_SHARES}" 
+if [[ ! -s $MOUNT_SHARES ]]; then
+	warn_msg "${MOUNT_SHARES} is empty"
+	echo -n "Would you like to edit it? [Y/n] "
+	read edit_it
+	if [[ $edit_it == "Y" || $edit_it == "y" || $edit_it == "" ]]; then
+		echo "{mount} {remote_share} {options}" > $MOUNT_SHARES
+		if [ ! -w $(dirname $MOUNT_SHARES) ]; then
+			${cmd_prefix}${EDITOR} $MOUNT_SHARES < /dev/tty
+		else
+			$EDITOR $MOUNT_SHARES < /dev/tty
+		fi
+		success_msg "Completed editing"
+	else
+		[[ -z "${shares[@]}" ]] && error_msg "no shares to process"
+	fi
+fi
+
+echo "Reading ${MOUNT_SHARES}..."
+declare -a shares=()
+i=0
+while read line; do
+	shares[$i]=$line
+	let i=($i + 1)
+done < "${MOUNT_SHARES}"
+
+[[ -z "${shares[@]}" ]] && error_msg "no shares to process"
+
+echo -n "Mounting shares..."
+for share in "${shares[@]}"; do
+	declare -a s=(${share//[\s\t]+/ })
+
+	mount=${s[0]}
+	remote=${s[1]}
+	if [ ${#s[@]} -ge 3 ]; then
+		options=${s[2]}
+	else
+		options=$MOUNT_OPTIONS
+	fi
+
+	if [ ! -d $mount ]; then
+		if [ ! -w $mount ]; then
+			${cmd_prefix}mkdir -p $mount
+			${cmd_prefix}chmod 0777 $mount
+			${cmd_prefix}chown -R $whoami $mount
+		else
+			mkdir -p $mount
+			chmod 0777 $mount
+		fi
+	fi
+	mount -t nfs -o $options $remote $mount
+done
+success_msg
+
+exit 0
